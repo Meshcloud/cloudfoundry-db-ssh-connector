@@ -1,0 +1,54 @@
+#!/usr/bin/env node
+
+const fs = require('fs');
+const child_process = require('child_process');
+
+function flatten(xs) {
+  return xs.reduce((a, b) => a.concat(b), [])
+}
+
+function dbtype(x) {
+  const s = x.toLowerCase();
+
+  if (s.includes("mysql")) {
+    return "mysql"
+  } else if (s.includes("postgres")) {
+    return "postgres"
+  } else if (s.includes("mongo")) {
+    return "mongo"
+  }
+}
+
+function parseUri(c) {
+  const uriString = c.uri;
+  if (!uriString) {
+    return {};
+  }
+
+  return new URL(uriString);
+}
+
+const app = process.argv[2];
+const stdin = child_process.execSync(`cf ssh ${app} -c 'echo $VCAP_SERVICES'`);
+const vcap = JSON.parse(stdin);
+
+const dbinfos = Object.keys(vcap).map(k => {
+  return vcap[k].map(s => {
+    const creds = s.credentials;
+    const uri = parseUri(creds);
+
+    return {
+      name: s.name,
+      dbtype: dbtype(k),
+      host: creds.hostname || creds.host || uri.hostname,
+      port: creds.port || uri.port,
+      database: creds.database,
+      username: creds.user || creds.username,
+      password: creds.password
+    };
+  });
+});
+
+const result = flatten(dbinfos);
+const pretty = JSON.stringify(result, null, 2);
+console.log(pretty);

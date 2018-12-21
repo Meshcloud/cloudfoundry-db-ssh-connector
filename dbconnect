@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -o errexit
+set -o errtrace
+set -o pipefail
+set -o nounset
+
+
+doc() {
+    cat <<-EOF
+Creates an open SSH Tunnel to a database instance on a Cloud Foundry app.
+The app must support "cf ssh".
+
+USAGE:
+    dbconnect <app> <service instance name> [port]
+
+EXAMPLES:
+    dbconnect app my-mysql
+EOF
+}
+
+main(){
+  container="$1"
+  service="$2"
+  port="${3:-63306}"
+  
+  dbs=$(./dbinfo "$container")
+  db=$(echo "$dbs" | jq -r '.[] | select(.name == "'"$service"'")')
+
+  db_type=$(echo "$db" | jq -r .dbtype)
+  db_host=$(echo "$db" | jq -r .host)
+  db_port=$(echo "$db" | jq -r .port)
+  db_database=$(echo "$db" | jq -r .database)
+  db_password=$(echo "$db" | jq -r .password)
+  db_user=$(echo "$db" | jq -r .username)
+
+  echo "Here's some helpful commands for you:"
+  case "$db_type" in
+    mysql)
+      echo "mysql -h 127.0.0.1 -P 63306 -u$db_user -p$db_password -D $db_database"
+      echo "mysqldump -h 127.0.0.1 -P 63306 -u$db_user -p$db_password $db_database"
+      ;;
+    mongo)
+      echo "mongo --username=$db_user --password=$db_password --authenticationDatabase=$db_database 127.0.0.1:$port/$db_database"
+      echo "mongodump --host=127.0.0.1 --port=$port --username=$db_user --password=$db_password --authenticationDatabase=$db_database --db=$db_database --gzip --archive=db.agz"
+      echo "mongorestore --host=127.0.0.1 --port=$port --username=$db_user --password=$db_password --authenticationDatabase=$db_database --nsFrom="*" --nsTo="$db_database.*" --gzip --archive=db.agz"
+      ;;
+    postgres)
+      echo "psql postgres://$db_user:$db_password@127.0.0.1:$port/$db_database"
+      ;;
+    *)
+      echo $"Unknown database type: $db_type"
+      exit 1
+  esac
+
+  printf "\nEstablishing connection... (exit to close tunnel)\n"
+  cmd="cf ssh -L $port:$db_host:$db_port $container"
+  echo "$cmd"
+  eval "$cmd"
+}
+
+if [[ $# == 2 ]]; then
+    main "$@"
+    exit 0;
+else
+    doc
+    exit 1;
+fi
