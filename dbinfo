@@ -16,6 +16,8 @@ function dbtype(x) {
     return "postgres"
   } else if (s.includes("mongo")) {
     return "mongo"
+  } else if (s.includes("rabbitmq")) {
+    return "rabbitmq"
   }
 }
 

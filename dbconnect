@@ -11,10 +11,14 @@ Creates an open SSH Tunnel to a database instance on a Cloud Foundry app.
 The app must support "cf ssh".
 
 USAGE:
-    dbconnect <app> <service instance name> [port]
+    dbconnect <app> <service instance name> [port] [raw_port]
 
 EXAMPLES:
     dbconnect app my-mysql
+
+PARAMETERS:
+    port (optional): the local port to connect the primary service port to (default: 63306)
+    raw_port (optional): a port to connect 1:1 (i.e. connect :raw_port from remote to :raw_port on localhost)
 EOF
 }
 
@@ -22,7 +26,8 @@ main(){
   container="$1"
   service="$2"
   port="${3:-63306}"
-  
+  raw_port="$4"
+
   dbs=$(./dbinfo "$container")
   db=$(echo "$dbs" | jq -r '.[] | select(.name == "'"$service"'")')
 
@@ -47,18 +52,32 @@ main(){
     postgres)
       echo "psql postgres://$db_user:$db_password@127.0.0.1:$port/$db_database"
       ;;
+    rabbitmq)
+        echo "rabbitmqctl <tbd>"
+        if [[ "$raw_port" = 15672 ]]; then
+            echo "web ui, if you're lucky: http://localhost:15672"
+            echo "username: $db_user"
+            echo "password: $db_password"
+        else
+            echo "tip: try passing 15672 as raw_port parameter to try to connect to web ui"
+        fi;
+      ;;
     *)
       echo $"Unknown database type: $db_type"
       exit 1
   esac
 
   printf "\nEstablishing connection... (exit to close tunnel)\n"
-  cmd="cf ssh -L $port:$db_host:$db_port $container"
+  cmd="cf ssh -L $port:$db_host:$db_port"
+  if [[ -n "$raw_port" ]]; then
+    cmd="$cmd -L $raw_port:$db_host:$raw_port"
+  fi;
+  cmd="$cmd $container"
   echo "$cmd"
   eval "$cmd"
 }
 
-if [[ $# == 2 ]]; then
+if [[ ($# -ge 2) && ($# -le 4) ]]; then
     main "$@"
     exit 0;
 else
